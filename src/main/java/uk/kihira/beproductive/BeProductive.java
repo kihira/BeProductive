@@ -34,7 +34,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 
-@Mod(modid = "BeProductive")
+@Mod(modid = "BeProductive", acceptableRemoteVersions = "*")
 public class BeProductive extends CommandBase {
 
     private static final Logger logger = LogManager.getLogger("BeProductive");
@@ -207,7 +207,8 @@ public class BeProductive extends CommandBase {
                     GameProfile profile = getGameProfileForPlayer(args[2]);
                     int ticks = getTicksFromMinutes(args[3]);
 
-                    breakTime.put(profile.getId(), ticks);
+                    if (ticks == 0) breakTime.remove(profile.getId());
+                    else breakTime.put(profile.getId(), ticks);
                     func_152373_a(sender, this, "Set break time for %s to %s minute(s)", profile.getName(), args[3]);
                 }
                 else if (args[1].equals("maxtimeon")) {
@@ -217,7 +218,8 @@ public class BeProductive extends CommandBase {
                     GameProfile profile = getGameProfileForPlayer(args[2]);
                     int ticks = getTicksFromMinutes(args[3]);
 
-                    maxTimeOn.put(profile.getId(), ticks);
+                    if (ticks == 0) maxTimeOn.remove(profile.getId());
+                    else maxTimeOn.put(profile.getId(), ticks);
                     func_152373_a(sender, this, "Set maximum time on for %s to %s minute(s)", profile.getName(), args[3]);
                 }
                 else if (args[1].equals("globalmaxtimeon")) {
@@ -256,7 +258,7 @@ public class BeProductive extends CommandBase {
 
                 rejoinTime.remove(profile.getId());
                 timeOnCount.remove(profile.getId(), timeOnCount.count(profile.getId()));
-                func_152373_a(sender, this, "Pardoned %s", profile.getName());
+                func_152373_a(sender, this, "Reset times for %s", profile.getName());
             }
             else {
                 throw new WrongUsageException("Usage: /beproductive <set|reset|timeout|reloadconfig>");
