@@ -106,7 +106,6 @@ public class BeProductive extends CommandBase {
     }
 
     @SubscribeEvent
-    @SideOnly(Side.SERVER)
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             update();
@@ -122,7 +121,7 @@ public class BeProductive extends CommandBase {
             timeOnCount.add(uuid);
 
             //Disconnect if still on timeout
-            if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
+            if ((rejoinTime.containsKey(uuid) && System.currentTimeMillis() < rejoinTime.get(uuid)) || (maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
                 rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
                 mc.theWorld.sendQuittingDisconnectingPacket();
                 mc.loadWorld(null);
