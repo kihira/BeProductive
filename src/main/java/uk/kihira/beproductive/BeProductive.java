@@ -314,9 +314,9 @@ public class BeProductive extends CommandBase {
     }
 
     private void loadSettings() {
-        maxTimeOnGlobal = config.getInt("maxTimeOnGlobal", Configuration.CATEGORY_GENERAL, 60, 0, Integer.MAX_VALUE,
+        maxTimeOnGlobal = config.getInt("maxTimeOnGlobal", Configuration.CATEGORY_GENERAL, 0, 0, Integer.MAX_VALUE,
                 "Global time in minutes that the player can play until timed out") * 60 * 20;
-        breakTimeGlobal = config.getInt("breakTimeGlobal", Configuration.CATEGORY_GENERAL, 60, 0, Integer.MAX_VALUE,
+        breakTimeGlobal = config.getInt("breakTimeGlobal", Configuration.CATEGORY_GENERAL, 0, 0, Integer.MAX_VALUE,
                 "Global time in minutes that the player cannot join the server for after being timed out") * 60000;
         kickMessage = config.getString("kickMessage", Configuration.CATEGORY_GENERAL, "Go be productive!",
                 "Kick message to be displayed when user needs to take a break or times to join");
@@ -353,8 +353,8 @@ public class BeProductive extends CommandBase {
     }
 
     private void saveSettings() {
-        config.get(Configuration.CATEGORY_GENERAL, "maxTimeOnGlobal", 60).set((maxTimeOnGlobal / 20) / 60);
-        config.get(Configuration.CATEGORY_GENERAL, "breakTimeGlobal", 60).set(breakTimeGlobal / 60000);
+        config.get(Configuration.CATEGORY_GENERAL, "maxTimeOnGlobal", 0).set((maxTimeOnGlobal / 20) / 60);
+        config.get(Configuration.CATEGORY_GENERAL, "breakTimeGlobal", 0).set(breakTimeGlobal / 60000);
         config.get(Configuration.CATEGORY_GENERAL, "kickMessage", "Go be productive!").set(kickMessage);
 
         JsonWriter writer = null;
