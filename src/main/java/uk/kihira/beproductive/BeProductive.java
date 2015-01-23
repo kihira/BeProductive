@@ -15,6 +15,10 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.command.*;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
@@ -102,29 +106,53 @@ public class BeProductive extends CommandBase {
     }
 
     @SubscribeEvent
-    public void onTick(TickEvent.ServerTickEvent event) {
+    @SideOnly(Side.SERVER)
+    public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
-            ArrayList<UUID> onlinePlayers = new ArrayList<UUID>();
-            for (Object obj : FMLCommonHandler.instance().getMinecraftServerInstance().getConfigurationManager().playerEntityList) {
-                EntityPlayerMP player = (EntityPlayerMP) obj;
-                UUID uuid = player.getUniqueID();
+            update();
+        }
+    }
 
-                onlinePlayers.add(uuid);
-                timeOnCount.add(uuid);
+    @SubscribeEvent
+    @SideOnly(Side.CLIENT)
+    public void onClientTick(TickEvent.ClientTickEvent event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (event.phase == TickEvent.Phase.END && mc.theWorld != null && !mc.isSingleplayer()) {
+            UUID uuid = mc.thePlayer.getUniqueID();
+            timeOnCount.add(uuid);
 
-                //Kick players who are on too long
-                if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
-                    rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
-                    kickPlayerForTime(player);
-                    timeOnCount.remove(uuid, timeOnCount.count(uuid));
-                }
+            //Disconnect if still on timeout
+            if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
+                rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
+                mc.theWorld.sendQuittingDisconnectingPacket();
+                mc.loadWorld(null);
+                mc.displayGuiScreen(new GuiMainMenu());
+                timeOnCount.remove(uuid, timeOnCount.count(uuid));
             }
+        }
+    }
 
-            //Decrease timeOnCount time for players that aren't online
-            for (UUID entry : timeOnCount.elementSet()) {
-                if (!onlinePlayers.contains(entry)) {
-                    timeOnCount.remove(entry, 1);
-                }
+    private void update() {
+        ArrayList<UUID> onlinePlayers = new ArrayList<UUID>();
+        for (Object obj : FMLCommonHandler.instance().getMinecraftServerInstance().getConfigurationManager().playerEntityList) {
+            EntityPlayerMP player = (EntityPlayerMP) obj;
+            UUID uuid = player.getUniqueID();
+
+            onlinePlayers.add(uuid);
+            timeOnCount.add(uuid);
+
+            //Kick players who are on too long
+            if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
+                rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
+                kickPlayerForTime(player);
+                timeOnCount.remove(uuid, timeOnCount.count(uuid));
+            }
+        }
+
+        //Decrease timeOnCount time for players that aren't online
+        for (UUID entry : timeOnCount.elementSet()) {
+            if (!onlinePlayers.contains(entry)) {
+                timeOnCount.remove(entry, 1);
             }
         }
     }
