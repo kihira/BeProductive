@@ -18,10 +18,11 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiMainMenu;
+import net.minecraft.client.gui.GuiDisconnected;
 import net.minecraft.command.*;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.ChatComponentText;
 import net.minecraftforge.common.config.Configuration;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
@@ -120,13 +121,17 @@ public class BeProductive extends CommandBase {
             UUID uuid = mc.thePlayer.getUniqueID();
             timeOnCount.add(uuid);
 
-            //Disconnect if still on timeout
-            if ((rejoinTime.containsKey(uuid) && System.currentTimeMillis() < rejoinTime.get(uuid)) || (maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
+            if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
                 rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
+                timeOnCount.remove(uuid, timeOnCount.count(uuid));
+            }
+
+            //Disconnect if still on timeout
+            if (rejoinTime.containsKey(uuid) && System.currentTimeMillis() < rejoinTime.get(uuid)) {
                 mc.theWorld.sendQuittingDisconnectingPacket();
                 mc.loadWorld(null);
-                mc.displayGuiScreen(new GuiMainMenu());
-                timeOnCount.remove(uuid, timeOnCount.count(uuid));
+                mc.displayGuiScreen(new GuiDisconnected(null, String.format(kickMessage + " You can rejoin in approx. %s minute(s)",
+                        (int) Math.floor(((rejoinTime.get(uuid) - System.currentTimeMillis()) / 1000F) / 60F)), new ChatComponentText("")));
             }
         }
     }
