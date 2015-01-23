@@ -1,0 +1,16 @@
+[
+{
+  "modid": "BeProductive",
+  "name": "BeProductive",
+  "description": "Limits a players time to prevent you or them from slacking",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "https://github.com/kihira",
+  "updateUrl": "https://github.com/kihira",
+  "authorList": ["Kihira"],
+  "credits": "",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
