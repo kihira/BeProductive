@@ -5,6 +5,8 @@ import com.google.common.collect.Multiset;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonWriter;
 import com.mojang.authlib.GameProfile;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Mod;
@@ -17,9 +19,11 @@ import net.minecraft.command.*;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.common.config.Configuration;
+import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +35,7 @@ public class BeProductive extends CommandBase {
     private static final Logger logger = LogManager.getLogger("BeProductive");
     private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private Configuration config;
+    private File userDataFile;
 
     //Current data
     /**
@@ -76,6 +81,14 @@ public class BeProductive extends CommandBase {
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
         config = new Configuration(event.getSuggestedConfigurationFile());
+        userDataFile = new File(event.getModConfigurationDirectory(), "beproductivedata.json");
+        if (!userDataFile.exists()) {
+            try {
+                userDataFile.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
 
         loadSettings();
         saveSettings();
@@ -128,6 +141,11 @@ public class BeProductive extends CommandBase {
                 rejoinTime.remove(uuid);
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        saveSettings();
     }
 
     private void kickPlayerForTime(EntityPlayerMP player) {
@@ -186,7 +204,9 @@ public class BeProductive extends CommandBase {
                     breakTimeGlobal = Integer.valueOf(args[2]) * 60000;
                     func_152373_a(sender, this, "Set break time for all to %s minute(s)", args[2]);
                 }
-                saveSettings();
+                else {
+                    throw new WrongUsageException("Usage: /beproductive set <globalbreaktime|globalmaxtimeon|maxtimeon|breaktime>");
+                }
             }
             else if (args[0].equals("timeout")) {
                 String playerName = args[1];
@@ -206,6 +226,9 @@ public class BeProductive extends CommandBase {
                 timeOnCount.remove(profile.getId(), timeOnCount.count(profile.getId()));
                 func_152373_a(sender, this, "Pardoned %s", profile.getName());
             }
+            else {
+                throw new WrongUsageException("Usage: /beproductive <set|reset|timeout|reloadconfig>");
+            }
         }
         else if (args.length == 1 && args[0].equals("reloadconfig")) {
             loadSettings();
@@ -213,6 +236,10 @@ public class BeProductive extends CommandBase {
 
             func_152373_a(sender, this, "Reloaded config from file");
         }
+        else {
+            throw new WrongUsageException("Usage: /beproductive <set|reset|timeout|reloadconfig>");
+        }
+        saveSettings();
     }
 
     @Override
@@ -259,10 +286,26 @@ public class BeProductive extends CommandBase {
                 "Global time in minutes that the player cannot join the server for after being timed out") * 60000;
         kickMessage = config.getString("kickMessage", Configuration.CATEGORY_GENERAL, "Go be productive!",
                 "Kick message to be displayed when user needs to take a break or times to join");
-        maxTimeOn = gson.fromJson(config.getString("maxTimeOn", "PLAYER", "", "Per player settings for max time"),
-                new TypeToken<HashMap<UUID, Integer>>() {{}}.getType());
-        breakTime = gson.fromJson(config.getString("breakTime", "PLAYER", "", "Per player settings for rejoin time"),
-                new TypeToken<HashMap<UUID, Integer>>() {{}}.getType());
+
+        JsonReader reader = null;
+        try {
+            reader = new JsonReader(new FileReader(userDataFile));
+
+            reader.beginArray();
+            maxTimeOn = gson.fromJson(reader, new TypeToken<HashMap<UUID, Integer>>() {{}}.getType());
+            breakTime = gson.fromJson(reader, new TypeToken<HashMap<UUID, Integer>>() {{}}.getType());
+            rejoinTime = gson.fromJson(reader, new TypeToken<HashMap<UUID, Long>>() {{}}.getType());
+            reader.endArray();
+
+            reader.close();
+
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            IOUtils.closeQuietly(reader);
+        }
 
         if (maxTimeOn == null) {
             maxTimeOn = new HashMap<UUID, Integer>();
@@ -270,14 +313,33 @@ public class BeProductive extends CommandBase {
         if (breakTime == null) {
             breakTime = new HashMap<UUID, Integer>();
         }
+        if (rejoinTime == null) {
+            rejoinTime = new HashMap<UUID, Long>();
+        }
     }
 
     private void saveSettings() {
-        config.get(Configuration.CATEGORY_GENERAL, "maxTimeOnGlobal", 60).set(maxTimeOnGlobal);
-        config.get(Configuration.CATEGORY_GENERAL, "breakTimeGlobal", 60).set(breakTimeGlobal);
+        config.get(Configuration.CATEGORY_GENERAL, "maxTimeOnGlobal", 60).set((maxTimeOnGlobal / 20) / 60);
+        config.get(Configuration.CATEGORY_GENERAL, "breakTimeGlobal", 60).set(breakTimeGlobal / 60000);
         config.get(Configuration.CATEGORY_GENERAL, "kickMessage", "Go be productive!").set(kickMessage);
-        config.get("PLAYER", "maxTimeOn", "").set(gson.toJson(maxTimeOn));
-        config.get("PLAYER", "breakTime", "").set(gson.toJson(breakTime));
+
+        JsonWriter writer = null;
+        try {
+            writer = new JsonWriter(new FileWriter(userDataFile));
+
+            writer.beginArray();
+            gson.toJson(maxTimeOn, new TypeToken<HashMap<UUID, Integer>>() {{}}.getType(), writer);
+            gson.toJson(breakTime, new TypeToken<HashMap<UUID, Integer>>() {{}}.getType(), writer);
+            gson.toJson(rejoinTime, new TypeToken<HashMap<UUID, Long>>() {{}}.getType(), writer);
+            writer.endArray();
+
+            writer.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            IOUtils.closeQuietly(writer);
+        }
 
         if (config.hasChanged()) {
             config.save();
