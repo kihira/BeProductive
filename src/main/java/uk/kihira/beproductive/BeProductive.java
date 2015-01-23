@@ -2,6 +2,9 @@ package uk.kihira.beproductive;
 
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Multiset;
+import com.google.common.reflect.TypeToken;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.mojang.authlib.GameProfile;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Mod;
@@ -13,12 +16,14 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
+import net.minecraft.command.WrongUsageException;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.common.config.Configuration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +32,7 @@ import java.util.UUID;
 public class BeProductive extends CommandBase {
 
     private static final Logger logger = LogManager.getLogger("BeProductive");
+    private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private Configuration config;
 
     //Current data
@@ -35,15 +41,19 @@ public class BeProductive extends CommandBase {
      */
     private Multiset<UUID> timeOnCount = HashMultiset.create();
     /**
-     * Time left in ticks until player can rejoin the server
+     * Unix time when player can rejoin
      */
-    private Multiset<UUID> timeToRejoin = HashMultiset.create();
+    private HashMap<UUID, Long> rejoinTime = new HashMap<UUID, Long>();
 
     //Per Player Settings
     /**
      * Max time on per player in ticks. Overrides {@link #maxTimeOnGlobal}
      */
     private HashMap<UUID, Integer> maxTimeOn = new HashMap<UUID, Integer>();
+    /**
+     * Time that the player has earned to be online.
+     */
+    private HashMap<UUID, Integer> earnedTimeOn = new HashMap<UUID, Integer>();
     /**
      * How long the player has to wait until they can rejoin
      */
@@ -55,15 +65,21 @@ public class BeProductive extends CommandBase {
      */
     private int maxTimeOnGlobal = 0;
     /**
-     * How long players have to wait until rejoining. Overriden by {@link #breakTime}
+     * Time earned every minute the player is offline.
      */
-    private int breakTimeGlobal = 0;
-    private String kickMessage = "Go be productive! You can rejoin in %s";
+    private float timeEarnedRatio = 1;
+    /**
+     * How long players have to wait until rejoining in milliseconds. Overriden by {@link #breakTime}
+     */
+    private long breakTimeGlobal = 0;
+    private String kickMessage = "Go be productive!";
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
         config = new Configuration(event.getSuggestedConfigurationFile());
+
         loadSettings();
+        saveSettings();
 
         FMLCommonHandler.instance().bus().register(this);
     }
@@ -76,38 +92,48 @@ public class BeProductive extends CommandBase {
     @SubscribeEvent
     public void onTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
+            ArrayList<UUID> onlinePlayers = new ArrayList<UUID>();
             for (Object obj : FMLCommonHandler.instance().getMinecraftServerInstance().getConfigurationManager().playerEntityList) {
                 EntityPlayerMP player = (EntityPlayerMP) obj;
                 UUID uuid = player.getUniqueID();
+
+                onlinePlayers.add(uuid);
                 timeOnCount.add(uuid);
-                logger.info("Increased time for " + player.getCommandSenderName() + " to " + timeOnCount.count(uuid));
 
                 //Kick players who are on too long
                 if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
-                    timeToRejoin.setCount(uuid, breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal);
+                    rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
                     kickPlayerForTime(player);
                     timeOnCount.remove(uuid, timeOnCount.count(uuid));
                 }
             }
 
-            //TODO Decrease timeOnCount time for players that aren't online?
-
-            //Decrease breakTime for players
-            for (UUID entry : timeToRejoin.elementSet()) {
-                timeToRejoin.remove(entry);
+            //Decrease timeOnCount time for players that aren't online
+            for (UUID entry : timeOnCount.elementSet()) {
+                if (!onlinePlayers.contains(entry)) {
+                    timeOnCount.remove(entry, 1);
+                }
             }
         }
     }
 
     @SubscribeEvent
     public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (timeToRejoin.contains(event.player.getUniqueID())) {
-            kickPlayerForTime((EntityPlayerMP) event.player);
+        UUID uuid = event.player.getUniqueID();
+        if (rejoinTime.containsKey(uuid)) {
+            //Check if they can rejoin, if so remove them from the map
+            if (System.currentTimeMillis() < rejoinTime.get(uuid)) {
+                kickPlayerForTime((EntityPlayerMP) event.player);
+            }
+            else {
+                rejoinTime.remove(uuid);
+            }
         }
     }
 
     private void kickPlayerForTime(EntityPlayerMP player) {
-        player.playerNetServerHandler.kickPlayerFromServer(String.format(kickMessage, "INSERT TIME HERE"));
+        player.playerNetServerHandler.kickPlayerFromServer(String.format(kickMessage + " You can rejoin in approx. %s minute(s)",
+                (int) Math.floor(((rejoinTime.get(player.getUniqueID()) - System.currentTimeMillis()) / 1000F) / 60F)));
     }
 
     //A lot of this command code is not very nice but it works.
@@ -123,11 +149,11 @@ public class BeProductive extends CommandBase {
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
-        if (args.length >= 2) {
+        if (args.length > 1) {
             if (args[0].equals("set")) {
                 if (args[1].equals("breaktime")) {
                     if (args.length != 4) {
-                        throw new CommandException("Usage: /beproductive set breaktime <playername> <minutes>");
+                        throw new WrongUsageException("Usage: /beproductive set breaktime <playername> <minutes>");
                     }
                     GameProfile profile = getGameProfileForPlayer(args[2]);
                     int ticks = getTicksFromMinutes(args[3]);
@@ -137,7 +163,7 @@ public class BeProductive extends CommandBase {
                 }
                 else if (args[1].equals("maxtimeon")) {
                     if (args.length != 4) {
-                        throw new CommandException("Usage: /beproductive set maxtimeon <playername> <minutes>");
+                        throw new WrongUsageException("Usage: /beproductive set maxtimeon <playername> <minutes>");
                     }
                     GameProfile profile = getGameProfileForPlayer(args[2]);
                     int ticks = getTicksFromMinutes(args[3]);
@@ -147,7 +173,7 @@ public class BeProductive extends CommandBase {
                 }
                 else if (args[1].equals("globalmaxtimeon")) {
                     if (args.length != 3) {
-                        throw new CommandException("Usage: /beproductive set globalmaxtimeon <minutes>");
+                        throw new WrongUsageException("Usage: /beproductive set globalmaxtimeon <minutes>");
                     }
 
                     maxTimeOnGlobal = getTicksFromMinutes(args[2]);
@@ -155,40 +181,50 @@ public class BeProductive extends CommandBase {
                 }
                 else if (args[1].equals("globalbreaktime")) {
                     if (args.length != 3) {
-                        throw new CommandException("Usage: /beproductive set globalbreaktime <minutes>");
+                        throw new WrongUsageException("Usage: /beproductive set globalbreaktime <minutes>");
                     }
 
-                    breakTimeGlobal = getTicksFromMinutes(args[2]);
+                    breakTimeGlobal = Integer.valueOf(args[2]) * 60000;
                     func_152373_a(sender, this, "Set break time for all to %s minute(s)", args[2]);
                 }
                 saveSettings();
             }
-            if (args[0].equals("timeout")) {
+            else if (args[0].equals("timeout")) {
                 String playerName = args[1];
                 GameProfile profile = getGameProfileForPlayer(playerName);
-                int ticks = breakTime.containsKey(profile.getId()) ? breakTime.get(profile.getId()) : breakTimeGlobal;
+                long milliseconds = args.length == 3 ? Integer.valueOf(args[2]) * 60000 : breakTime.containsKey(profile.getId()) ? breakTime.get(profile.getId()) : breakTimeGlobal;
 
-                //If optional timeout time specified otherwise we use default
-                if (args.length == 3) {
-                    ticks = getTicksFromMinutes(args[2]);
-                }
-                timeToRejoin.setCount(profile.getId(), ticks);
+                timeOnCount.remove(profile.getId(), timeOnCount.count(profile.getId()));
+                rejoinTime.put(profile.getId(), System.currentTimeMillis() + milliseconds);
                 kickPlayerForTime(MinecraftServer.getServer().getConfigurationManager().func_152612_a(playerName));
-                func_152373_a(sender, this, "Timed out %s for %s minute(s)", profile.getName(), (ticks / 20) / 60);
+                func_152373_a(sender, this, "Timed out %s for %s minute(s)", profile.getName(), milliseconds / 60000);
             }
+            else if (args[0].equals("reset")) {
+                String playerName = args[1];
+                GameProfile profile = getGameProfileForPlayer(playerName);
+
+                rejoinTime.remove(profile.getId());
+                timeOnCount.remove(profile.getId(), timeOnCount.count(profile.getId()));
+                func_152373_a(sender, this, "Pardoned %s", profile.getName());
+            }
+        }
+        else if (args.length == 1 && args[0].equals("reloadconfig")) {
+            loadSettings();
+
+            func_152373_a(sender, this, "Reloaded config from file");
         }
     }
 
     @Override
     public List addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, "set", "timeout");
+            return getListOfStringsMatchingLastWord(args, "set", "timeout", "reset", "reloadconfig");
         }
         else if (args.length == 2) {
             if (args[0].equals("set")) {
                 return getListOfStringsMatchingLastWord(args, "breaktime", "maxtimeon", "globalmaxtimeon", "globalbreaktime");
             }
-            else if (args[0].equals("timeout")) {
+            else if (args[0].equals("timeout") || args[0].equals("reset")) {
                 return getListOfStringsMatchingLastWord(args, MinecraftServer.getServer().getAllUsernames());
             }
         }
@@ -218,12 +254,31 @@ public class BeProductive extends CommandBase {
 
     private void loadSettings() {
         maxTimeOnGlobal = config.getInt("maxTimeOnGlobal", Configuration.CATEGORY_GENERAL, 60, 0, Integer.MAX_VALUE,
-                "Global time in minutes that the player can play until timed out");
+                "Global time in minutes that the player can play until timed out") * 60 * 20;
         breakTimeGlobal = config.getInt("breakTimeGlobal", Configuration.CATEGORY_GENERAL, 60, 0, Integer.MAX_VALUE,
-                "Global time in minutes that the player cannot join the server for after being timed out");
+                "Global time in minutes that the player cannot join the server for after being timed out") * 60000;
+        kickMessage = config.getString("kickMessage", Configuration.CATEGORY_GENERAL, "Go be productive!",
+                "Kick message to be displayed when user needs to take a break or times to join");
+        maxTimeOn = gson.fromJson(config.getString("maxTimeOn", "PLAYER", "", "Per player settings for max time"),
+                new TypeToken<HashMap<UUID, Integer>>() {{}}.getType());
+        breakTime = gson.fromJson(config.getString("breakTime", "PLAYER", "", "Per player settings for rejoin time"),
+                new TypeToken<HashMap<UUID, Integer>>() {{}}.getType());
+
+        if (maxTimeOn == null) {
+            maxTimeOn = new HashMap<UUID, Integer>();
+        }
+        if (breakTime == null) {
+            breakTime = new HashMap<UUID, Integer>();
+        }
     }
 
     private void saveSettings() {
+        config.get(Configuration.CATEGORY_GENERAL, "maxTimeOnGlobal", 60).set(maxTimeOnGlobal);
+        config.get(Configuration.CATEGORY_GENERAL, "breakTimeGlobal", 60).set(breakTimeGlobal);
+        config.get(Configuration.CATEGORY_GENERAL, "kickMessage", "Go be productive!").set(kickMessage);
+        config.get("PLAYER", "maxTimeOn", "").set(gson.toJson(maxTimeOn));
+        config.get("PLAYER", "breakTime", "").set(gson.toJson(breakTime));
+
         if (config.hasChanged()) {
             config.save();
         }
