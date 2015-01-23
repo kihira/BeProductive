@@ -13,10 +13,7 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
-import net.minecraft.command.CommandBase;
-import net.minecraft.command.CommandException;
-import net.minecraft.command.ICommandSender;
-import net.minecraft.command.WrongUsageException;
+import net.minecraft.command.*;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.common.config.Configuration;
@@ -52,6 +49,7 @@ public class BeProductive extends CommandBase {
     private HashMap<UUID, Integer> maxTimeOn = new HashMap<UUID, Integer>();
     /**
      * Time that the player has earned to be online.
+     * Not currently used
      */
     private HashMap<UUID, Integer> earnedTimeOn = new HashMap<UUID, Integer>();
     /**
@@ -66,6 +64,7 @@ public class BeProductive extends CommandBase {
     private int maxTimeOnGlobal = 0;
     /**
      * Time earned every minute the player is offline.
+     * Not currently used
      */
     private float timeEarnedRatio = 1;
     /**
@@ -210,6 +209,7 @@ public class BeProductive extends CommandBase {
         }
         else if (args.length == 1 && args[0].equals("reloadconfig")) {
             loadSettings();
+            saveSettings();
 
             func_152373_a(sender, this, "Reloaded config from file");
         }
@@ -248,7 +248,7 @@ public class BeProductive extends CommandBase {
         try {
             return Integer.valueOf(string) * 60 * 20;
         } catch (NumberFormatException e) {
-            throw new CommandException("Invalid number for minutes");
+            throw new NumberInvalidException("Invalid number for minutes");
         }
     }
 
