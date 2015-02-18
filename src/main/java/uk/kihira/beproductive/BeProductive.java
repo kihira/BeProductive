@@ -2,6 +2,7 @@ package uk.kihira.beproductive;
 
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Multiset;
+import com.google.common.collect.Multisets;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -29,10 +30,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @Mod(modid = "BeProductive", acceptableRemoteVersions = "*")
 public class BeProductive extends CommandBase {
@@ -154,11 +152,13 @@ public class BeProductive extends CommandBase {
         }
 
         //Decrease timeOnCount time for players that aren't online
+        HashMultiset<UUID> uuids = HashMultiset.create();
         for (UUID entry : timeOnCount.elementSet()) {
             if (!onlinePlayers.contains(entry)) {
-                timeOnCount.remove(entry, 1);
+                uuids.add(entry);
             }
         }
+        Multisets.removeOccurrences(timeOnCount, uuids);
     }
 
     @SubscribeEvent
