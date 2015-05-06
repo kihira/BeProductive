@@ -38,7 +38,7 @@ project.ext {
     major = "1"
     minor = "1"
     mcVersion = "1.7.10"
-    forgeVersion = "10.13.2.1236"
+    forgeVersion = "10.13.3.1401-1710ls"
     buildVersion = System.getenv("BUILD_NUMBER")
 }
 
