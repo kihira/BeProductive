@@ -11,7 +11,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:1.2-SNAPSHOT'
+        classpath 'net.minecraftforge.gradle:ForgeGradle:2.2-SNAPSHOT'
     }
 }
 
@@ -23,7 +23,7 @@ repositories {
     }
 }
 
-apply plugin: 'forge'
+apply plugin: 'net.minecraftforge.gradle.forge'
 
 configurations {
     deployerJars
@@ -37,8 +37,8 @@ project.ext {
     massive = "0"
     major = "1"
     minor = "1"
-    mcVersion = "1.7.10"
-    forgeVersion = "10.13.3.1401-1710ls"
+    mcVersion = "1.10.2"
+    forgeVersion = "12.18.3.2185"
     buildVersion = System.getenv("BUILD_NUMBER")
 }
 
@@ -52,6 +52,8 @@ archivesBaseName = "BeProductive"
 
 minecraft {
     version = "${project.ext.mcVersion}-${project.ext.forgeVersion}"
+	mappings = "snapshot_20161111"
+	runDir = "run"
 }
 
 processResources {
@@ -67,12 +69,6 @@ processResources {
     from(sourceSets.main.resources.srcDirs) {
         exclude '**/*.info'
     }
-}
-
-task sourceJar(type: Jar) {
-    from sourceSets.main.allSource
-    from sourceSets.api.allSource
-    classifier = 'src'
 }
 
 task deobfJar(type: Jar) {
