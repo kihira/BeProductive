@@ -9,26 +9,30 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.mojang.authlib.GameProfile;
-import cpw.mods.fml.common.FMLCommonHandler;
-import cpw.mods.fml.common.Mod;
-import cpw.mods.fml.common.event.FMLPreInitializationEvent;
-import cpw.mods.fml.common.event.FMLServerStartingEvent;
-import cpw.mods.fml.common.eventhandler.SubscribeEvent;
-import cpw.mods.fml.common.gameevent.PlayerEvent;
-import cpw.mods.fml.common.gameevent.TickEvent;
-import cpw.mods.fml.relauncher.Side;
-import cpw.mods.fml.relauncher.SideOnly;
+import net.minecraft.util.math.BlockPos;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.FMLCommonHandler;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.PlayerEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDisconnected;
 import net.minecraft.command.*;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.text.TextComponentString;
 import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.fml.server.FMLServerHandler;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import javax.annotation.Nullable;
 import java.io.*;
 import java.util.*;
 
@@ -96,7 +100,7 @@ public class BeProductive extends CommandBase {
         loadSettings();
         saveSettings();
 
-        FMLCommonHandler.instance().bus().register(this);
+        MinecraftForge.EVENT_BUS.register(this);
     }
 
     @Mod.EventHandler
@@ -120,7 +124,7 @@ public class BeProductive extends CommandBase {
             timeOnCount.add(uuid);
 
             if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
-                rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
+                rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) * 50 : breakTimeGlobal * 50));
                 timeOnCount.remove(uuid, timeOnCount.count(uuid));
             }
 
@@ -129,14 +133,14 @@ public class BeProductive extends CommandBase {
                 mc.theWorld.sendQuittingDisconnectingPacket();
                 mc.loadWorld(null);
                 mc.displayGuiScreen(new GuiDisconnected(null, String.format(kickMessage + " You can rejoin in approx. %s minute(s)",
-                        (int) Math.floor(((rejoinTime.get(uuid) - System.currentTimeMillis()) / 1000F) / 60F)), new ChatComponentText("")));
+                        (int) Math.floor(((rejoinTime.get(uuid) - System.currentTimeMillis()) / 1000F) / 60F)), new TextComponentString("")));
             }
         }
     }
 
     private void update() {
         ArrayList<UUID> onlinePlayers = new ArrayList<UUID>();
-        for (Object obj : FMLCommonHandler.instance().getMinecraftServerInstance().getConfigurationManager().playerEntityList) {
+        for (Object obj : FMLCommonHandler.instance().getMinecraftServerInstance().getPlayerList().getPlayerList()) {
             EntityPlayerMP player = (EntityPlayerMP) obj;
             UUID uuid = player.getUniqueID();
 
@@ -145,7 +149,7 @@ public class BeProductive extends CommandBase {
 
             //Kick players who are on too long
             if ((maxTimeOn.containsKey(uuid) && timeOnCount.count(uuid) > maxTimeOn.get(uuid)) || (maxTimeOnGlobal != 0 && timeOnCount.count(uuid) > maxTimeOnGlobal)) {
-                rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) : breakTimeGlobal));
+                rejoinTime.put(uuid, System.currentTimeMillis() + (breakTime.containsKey(uuid) ? breakTime.get(uuid) * 50 : breakTimeGlobal * 50));
                 kickPlayerForTime(player);
                 timeOnCount.remove(uuid, timeOnCount.count(uuid));
             }
@@ -181,7 +185,7 @@ public class BeProductive extends CommandBase {
     }
 
     private void kickPlayerForTime(EntityPlayerMP player) {
-        player.playerNetServerHandler.kickPlayerFromServer(String.format(kickMessage + " You can rejoin in approx. %s minute(s)",
+        player.connection.kickPlayerFromServer(String.format(kickMessage + " You can rejoin in approx. %s minute(s)",
                 (int) Math.floor(((rejoinTime.get(player.getUniqueID()) - System.currentTimeMillis()) / 1000F) / 60F)));
     }
 
@@ -197,7 +201,7 @@ public class BeProductive extends CommandBase {
     }
 
     @Override
-    public void processCommand(ICommandSender sender, String[] args) {
+    public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if (args.length > 1) {
             if (args[0].equals("set")) {
                 if (args[1].equals("breaktime")) {
@@ -209,7 +213,7 @@ public class BeProductive extends CommandBase {
 
                     if (ticks == 0) breakTime.remove(profile.getId());
                     else breakTime.put(profile.getId(), ticks);
-                    func_152373_a(sender, this, "Set break time for %s to %s minute(s)", profile.getName(), args[3]);
+                    notifyCommandListener(sender, this, "Set break time for %s to %s minute(s)", profile.getName(), args[3]);
                 }
                 else if (args[1].equals("maxtimeon")) {
                     if (args.length != 4) {
@@ -220,7 +224,7 @@ public class BeProductive extends CommandBase {
 
                     if (ticks == 0) maxTimeOn.remove(profile.getId());
                     else maxTimeOn.put(profile.getId(), ticks);
-                    func_152373_a(sender, this, "Set maximum time on for %s to %s minute(s)", profile.getName(), args[3]);
+                    notifyCommandListener(sender, this, "Set maximum time on for %s to %s minute(s)", profile.getName(), args[3]);
                 }
                 else if (args[1].equals("globalmaxtimeon")) {
                     if (args.length != 3) {
@@ -228,7 +232,7 @@ public class BeProductive extends CommandBase {
                     }
 
                     maxTimeOnGlobal = getTicksFromMinutes(args[2]);
-                    func_152373_a(sender, this, "Set maximum time on for all to %s minute(s)", args[2]);
+                    notifyCommandListener(sender, this, "Set maximum time on for all to %s minute(s)", args[2]);
                 }
                 else if (args[1].equals("globalbreaktime")) {
                     if (args.length != 3) {
@@ -236,7 +240,7 @@ public class BeProductive extends CommandBase {
                     }
 
                     breakTimeGlobal = Integer.valueOf(args[2]) * 60000;
-                    func_152373_a(sender, this, "Set break time for all to %s minute(s)", args[2]);
+                    notifyCommandListener(sender, this, "Set break time for all to %s minute(s)", args[2]);
                 }
                 else {
                     throw new WrongUsageException("Usage: /beproductive set <globalbreaktime|globalmaxtimeon|maxtimeon|breaktime>");
@@ -245,12 +249,12 @@ public class BeProductive extends CommandBase {
             else if (args[0].equals("timeout")) {
                 String playerName = args[1];
                 GameProfile profile = getGameProfileForPlayer(playerName);
-                long milliseconds = args.length == 3 ? Integer.valueOf(args[2]) * 60000 : breakTime.containsKey(profile.getId()) ? breakTime.get(profile.getId()) : breakTimeGlobal;
+                long milliseconds = args.length == 3 ? Integer.valueOf(args[2]) * 60000 : breakTime.containsKey(profile.getId()) ? breakTime.get(profile.getId()) * 50 : breakTimeGlobal * 50;
 
                 timeOnCount.remove(profile.getId(), timeOnCount.count(profile.getId()));
                 rejoinTime.put(profile.getId(), System.currentTimeMillis() + milliseconds);
-                kickPlayerForTime(MinecraftServer.getServer().getConfigurationManager().func_152612_a(playerName));
-                func_152373_a(sender, this, "Timed out %s for %s minute(s)", profile.getName(), milliseconds / 60000);
+                kickPlayerForTime(FMLServerHandler.instance().getServer().getPlayerList().getPlayerByUsername(playerName));
+                notifyCommandListener(sender, this, "Timed out %s for %s minute(s)", profile.getName(), milliseconds / 60000);
             }
             else if (args[0].equals("reset")) {
                 String playerName = args[1];
@@ -258,7 +262,7 @@ public class BeProductive extends CommandBase {
 
                 rejoinTime.remove(profile.getId());
                 timeOnCount.remove(profile.getId(), timeOnCount.count(profile.getId()));
-                func_152373_a(sender, this, "Reset times for %s", profile.getName());
+                notifyCommandListener(sender, this, "Reset times for %s", profile.getName());
             }
             else {
                 throw new WrongUsageException("Usage: /beproductive <set|reset|timeout|reloadconfig>");
@@ -268,7 +272,7 @@ public class BeProductive extends CommandBase {
             loadSettings();
             saveSettings();
 
-            func_152373_a(sender, this, "Reloaded config from file");
+            notifyCommandListener(sender, this, "Reloaded config from file");
         }
         else {
             throw new WrongUsageException("Usage: /beproductive <set|reset|timeout|reloadconfig>");
@@ -277,7 +281,7 @@ public class BeProductive extends CommandBase {
     }
 
     @Override
-    public List addTabCompletionOptions(ICommandSender sender, String[] args) {
+    public List getTabCompletionOptions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos pos) {
         if (args.length == 1) {
             return getListOfStringsMatchingLastWord(args, "set", "timeout", "reset", "reloadconfig");
         }
@@ -286,19 +290,19 @@ public class BeProductive extends CommandBase {
                 return getListOfStringsMatchingLastWord(args, "breaktime", "maxtimeon", "globalmaxtimeon", "globalbreaktime");
             }
             else if (args[0].equals("timeout") || args[0].equals("reset")) {
-                return getListOfStringsMatchingLastWord(args, MinecraftServer.getServer().getAllUsernames());
+                return getListOfStringsMatchingLastWord(args, FMLServerHandler.instance().getServer().getAllUsernames());
             }
         }
         else if (args.length == 3) {
             if (args[1].equals("breaktime") || args[1].equals("maxtimeon")) {
-                return getListOfStringsMatchingLastWord(args, MinecraftServer.getServer().getAllUsernames());
+                return getListOfStringsMatchingLastWord(args, FMLServerHandler.instance().getServer().getAllUsernames());
             }
         }
-        return super.addTabCompletionOptions(sender, args);
+        return super.getTabCompletionOptions(server, sender, args, pos);
     }
 
     private GameProfile getGameProfileForPlayer(String playerName) throws CommandException {
-        GameProfile profile = MinecraftServer.getServer().func_152358_ax().func_152655_a(playerName);
+        GameProfile profile = FMLServerHandler.instance().getServer().getPlayerList().getPlayerByUsername(playerName).getGameProfile();
         if (profile == null) {
             throw new CommandException("Unable to find the profile for the player %s", playerName);
         }
